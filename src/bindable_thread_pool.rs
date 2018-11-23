@@ -26,7 +26,6 @@ fn cpuset_for_core(topology: &Topology, idx: usize) -> CpuSet {
     let numa_nodes = (*topology)
         .objects_with_type(&ObjectType::NUMANode)
         .unwrap_or(Vec::new());
-    println!("{}", numa_nodes.len());
     match cores.get(idx) {
         Some(val) => val.cpuset().unwrap(),
         None => panic!(
@@ -62,7 +61,7 @@ impl BindableThreadPool {
     /// Build the `ThreadPool`.
     pub fn build(self) -> Result<ThreadPool, ThreadPoolBuildError> {
         let topo = Mutex::new(Topology::new());
-        bind_main_thread(&topo);
+        //bind_main_thread(&topo);
         let pool = self
             .builder
             .start_handler(move |thread_id| {
@@ -73,14 +72,20 @@ impl BindableThreadPool {
 
     pub fn build_global(self) -> Result<(), ThreadPoolBuildError> {
         let topo = Mutex::new(Topology::new());
-        bind_main_thread(&topo);
-        self.builder
-            .start_handler(move |thread_id| {
-                binder(thread_id, &topo);
-            }).build_global()
+        //bind_main_thread(&topo);
+        match self.bind_policy {
+            POLICY::ROUND_ROBIN_NUMA => self
+                .builder
+                .start_handler(move |thread_id| {
+                    bind_numa(thread_id, &topo);
+                }).build_global(),
+            _ => self
+                .builder
+                .start_handler(move |thread_id| {
+                    binder(thread_id, &topo);
+                }).build_global(),
+        }
     }
-
-    //TODO add build_global as well.
 }
 
 fn bind_main_thread(topo: &Mutex<Topology>) {
@@ -97,10 +102,33 @@ fn bind_main_thread(topo: &Mutex<Topology>) {
     println!("Thread {}, bind to {:?}", 0, after);
 }
 
+fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
+    let pthread_id = get_thread_id();
+    let mut locked_topo = topo.lock().unwrap();
+    let num_numa_nodes = (locked_topo)
+        .objects_with_type(&ObjectType::NUMANode)
+        .unwrap_or(Vec::new())
+        .len();
+    let my_numa_node_index = thread_id % num_numa_nodes;
+    //let my_core = thread_id / num_numa_nodes;
+    let mut my_core = {
+        let all_numa_nodes = locked_topo
+            .objects_with_type(&ObjectType::NUMANode)
+            .unwrap();
+        let my_numa_node = all_numa_nodes.get(my_numa_node_index).unwrap();
+        my_numa_node.cpuset().unwrap()
+    };
+    my_core.singlify(); //This would give you "some" cpu node but you don't know which one.
+    locked_topo
+        .set_cpubind_for_thread(pthread_id, my_core, CPUBIND_THREAD)
+        .unwrap();
+    let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
+    println!("Thread {}, bind to {:?}", thread_id, after);
+}
 fn binder(thread_id: usize, topo: &Mutex<Topology>) {
     let pthread_id = get_thread_id();
     let mut locked_topo = topo.lock().unwrap();
-    let mut bind_to = cpuset_for_core(&locked_topo, thread_id + 1);
+    let mut bind_to = cpuset_for_core(&locked_topo, thread_id);
     bind_to.singlify();
     println!("binding {} to {}", pthread_id, bind_to);
     locked_topo
@@ -108,5 +136,5 @@ fn binder(thread_id: usize, topo: &Mutex<Topology>) {
         .unwrap();
     println!("binding done");
     let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-    println!("Thread {}, bind to {:?}", thread_id + 1, after);
+    println!("Thread {}, bind to {:?}", thread_id, after);
 }

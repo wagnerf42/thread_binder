@@ -103,6 +103,7 @@ fn bind_main_thread(topo: &Mutex<Topology>) {
 }
 
 fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
+	println!("I will bind as per ROUND_ROBIN_NUMA");
     let pthread_id = get_thread_id();
     let mut locked_topo = topo.lock().unwrap();
     let num_numa_nodes = (locked_topo)
@@ -118,6 +119,7 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
         let my_numa_node = all_numa_nodes.get(my_numa_node_index).unwrap();
         my_numa_node.cpuset().unwrap()
     };
+    println!("want to bind to {:?}", my_core);
     my_core.singlify(); //This would give you "some" cpu node but you don't know which one.
     locked_topo
         .set_cpubind_for_thread(pthread_id, my_core, CPUBIND_THREAD)

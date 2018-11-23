@@ -62,11 +62,18 @@ impl BindableThreadPool {
     pub fn build(self) -> Result<ThreadPool, ThreadPoolBuildError> {
         let topo = Mutex::new(Topology::new());
         //bind_main_thread(&topo);
-        let pool = self
-            .builder
-            .start_handler(move |thread_id| {
-                binder(thread_id, &topo);
-            }).build();
+        let pool = match self.bind_policy {
+            POLICY::ROUND_ROBIN_NUMA => self
+                .builder
+                .start_handler(move |thread_id| {
+                    bind_numa(thread_id, &topo);
+                }).build(),
+            _ => self
+                .builder
+                .start_handler(move |thread_id| {
+                    binder(thread_id, &topo);
+                }).build(),
+        };
         pool
     }
 
@@ -103,7 +110,7 @@ fn bind_main_thread(topo: &Mutex<Topology>) {
 }
 
 fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
-	println!("I will bind as per ROUND_ROBIN_NUMA");
+    println!("I will bind as per ROUND_ROBIN_NUMA");
     let pthread_id = get_thread_id();
     let mut locked_topo = topo.lock().unwrap();
     let num_numa_nodes = (locked_topo)

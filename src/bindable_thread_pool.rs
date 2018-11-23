@@ -120,6 +120,9 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
     let my_core_index = thread_id / num_numa_nodes;
     let mut my_core = {
         let cpu_list = locked_topo.objects_with_type(&ObjectType::Core).unwrap();
+        let cpu_depth = cpu_list[0].depth();
+        println!("CPU depth is {}", cpu_depth);
+        let cpu_list = locked_topo.objects_at_depth(cpu_depth);
         cpu_list
             .get(my_numa_node_index * num_numa_nodes + my_core_index)
             .unwrap()

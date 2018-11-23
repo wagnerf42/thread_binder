@@ -1,0 +1,9 @@
+[package]
+name = "thread_binder"
+version = "0.1.0"
+authors = ["Saurabh Raje <saurabh.mraje@gmail.com>"]
+
+[dependencies]
+rayon = "*"
+hwloc = "*"
+libc = "*"

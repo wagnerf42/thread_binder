@@ -118,13 +118,18 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
         .unwrap_or(Vec::new())
         .len();
     let my_numa_node_index = thread_id % num_numa_nodes;
-    //let my_core = thread_id / num_numa_nodes;
+    let my_core_index = thread_id / num_numa_nodes;
     let mut my_core = {
         let all_numa_nodes = locked_topo
             .objects_with_type(&ObjectType::NUMANode)
             .unwrap();
         let my_numa_node = all_numa_nodes.get(my_numa_node_index).unwrap();
-        my_numa_node.cpuset().unwrap()
+        my_numa_node
+            .children()
+            .get(my_core_index)
+            .unwrap()
+            .cpuset()
+            .unwrap()
     };
     println!("want to bind to {:?}", my_core);
     my_core.singlify(); //This would give you "some" cpu node but you don't know which one.

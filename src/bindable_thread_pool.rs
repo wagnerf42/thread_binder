@@ -124,12 +124,11 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
             .objects_with_type(&ObjectType::NUMANode)
             .unwrap();
         let my_numa_node = all_numa_nodes.get(my_numa_node_index).unwrap();
-        my_numa_node
-            .children()
-            .get(my_core_index)
-            .unwrap()
-            .cpuset()
-            .unwrap()
+        let mut try_cpu = my_numa_node.children();
+        while try_cpu.get(0).unwrap().object_type() != ObjectType::Core {
+            try_cpu = try_cpu.get(0).unwrap().children();
+        }
+        try_cpu.get(my_core_index).unwrap().cpuset().unwrap()
     };
     println!("want to bind to {:?}", my_core);
     my_core.singlify(); //This would give you "some" cpu node but you don't know which one.

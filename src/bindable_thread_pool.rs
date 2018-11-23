@@ -121,10 +121,11 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
     let my_core_index = thread_id / num_numa_nodes;
     let mut my_core = {
         let cpu_list = locked_topo.objects_with_type(&ObjectType::Core).unwrap();
+		let num_cores_per_numa = cpu_list.len()/num_numa_nodes;
         let cpu_depth = cpu_list[0].depth();
         let cpu_list = locked_topo.objects_at_depth(cpu_depth);
         cpu_list
-            .get(my_numa_node_index * 16  + my_core_index) // change 16 to number of cores per numa
+            .get(my_numa_node_index * num_cores_per_numa  + my_core_index) 
             .unwrap()
             .cpuset()
             .unwrap()

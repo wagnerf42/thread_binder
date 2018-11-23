@@ -17,8 +17,8 @@ pub fn fibonacci_recursive(n: i32) -> u64 {
 }
 fn main() {
 let mypool =
-    BindableThreadPool::new(POLICY::ROUND_ROBIN_NUMA)
-        .num_threads(16)
+    BindableThreadPool::new(POLICY::ROUND_ROBIN_CORE)
+        .num_threads(64)
         .build()
         .expect("Thread pool build failed");
 	mypool.install(|| fibonacci_recursive(50));

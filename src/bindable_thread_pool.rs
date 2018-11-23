@@ -84,6 +84,7 @@ impl BindableThreadPool {
             POLICY::ROUND_ROBIN_NUMA => self
                 .builder
                 .start_handler(move |thread_id| {
+        let topo = Mutex::new(Topology::new());
                     bind_numa(thread_id, &topo);
                 }).build_global(),
             _ => self
@@ -121,15 +122,14 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
     let mut my_core = {
         let cpu_list = locked_topo.objects_with_type(&ObjectType::Core).unwrap();
         let cpu_depth = cpu_list[0].depth();
-        println!("CPU depth is {}", cpu_depth);
         let cpu_list = locked_topo.objects_at_depth(cpu_depth);
         cpu_list
-            .get(my_numa_node_index * num_numa_nodes + my_core_index)
+            .get(my_numa_node_index * 16  + my_core_index) // change 16 to number of cores per numa
             .unwrap()
             .cpuset()
             .unwrap()
     };
-    println!("want to bind to {:?}", my_core);
+    //println!("want to bind to {:?}", my_core);
     my_core.singlify(); //This would give you "some" cpu node but you don't know which one.
     locked_topo
         .set_cpubind_for_thread(pthread_id, my_core, CPUBIND_THREAD)

@@ -15,4 +15,5 @@ Note that in all the above cases, a core is a physical core, and not a logical c
 This crate uses an existing HWLOC-RS crate by daschl. However, it is much more programmer friendly since the same API is exposed and that makes it super easy to use.
 
 ## HOW
-Just clone and add the path (pointing to where you cloned) in the Cargo.toml. Name of the package is thread_binder.
+1. Just clone and add the path (pointing to where you cloned) in the Cargo.toml. Name of the package is thread_binder.
+2. Create the thread pool using BindableThreadPool::new(POLICY::XXX) where XXX is one of the above policies. It is necessary to give some policy for binding. Rest of the usage is same as the Rayon thread pool.

@@ -3,12 +3,11 @@ extern crate libc;
 extern crate rayon;
 use self::hwloc::{CpuSet, ObjectType, Topology, CPUBIND_THREAD};
 use self::rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 pub struct BindableThreadPool {
     builder: ThreadPoolBuilder,
     bind_policy: POLICY,
-    num_threads: usize,
 }
 /// This enum specifies whether you want to pack the threads on one NUMA node or assign them on
 /// multiple NUMA nodes in a round robin fashion.
@@ -45,7 +44,6 @@ impl BindableThreadPool {
         BindableThreadPool {
             builder: ThreadPoolBuilder::new(),
             bind_policy,
-            num_threads: 0,
         }
     }
 
@@ -54,7 +52,6 @@ impl BindableThreadPool {
         BindableThreadPool {
             builder: self.builder.num_threads(num_threads),
             bind_policy: self.bind_policy,
-            num_threads,
         }
     }
 
@@ -84,7 +81,7 @@ impl BindableThreadPool {
             POLICY::ROUND_ROBIN_NUMA => self
                 .builder
                 .start_handler(move |thread_id| {
-        let topo = Mutex::new(Topology::new());
+                    let topo = Mutex::new(Topology::new());
                     bind_numa(thread_id, &topo);
                 }).build_global(),
             _ => self
@@ -121,11 +118,11 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
     let my_core_index = thread_id / num_numa_nodes;
     let mut my_core = {
         let cpu_list = locked_topo.objects_with_type(&ObjectType::Core).unwrap();
-		let num_cores_per_numa = cpu_list.len()/num_numa_nodes;
+        let num_cores_per_numa = cpu_list.len() / num_numa_nodes;
         let cpu_depth = cpu_list[0].depth();
         let cpu_list = locked_topo.objects_at_depth(cpu_depth);
         cpu_list
-            .get(my_numa_node_index * num_cores_per_numa  + my_core_index) 
+            .get(my_numa_node_index * num_cores_per_numa + my_core_index)
             .unwrap()
             .cpuset()
             .unwrap()

@@ -16,15 +16,12 @@ pub enum POLICY {
     ROUND_ROBIN_NUMA,
     /// Threads get assigned to the first available PU in a CPU in a round robin fashion.
     ROUND_ROBIN_CORE,
-    /// Threads get assigned to the first available PU.
-    ROUND_ROBIN_PU,
+    // Threads get assigned to the first available PU. This will be added later if required.
+    //ROUND_ROBIN_PU,
 }
 
 fn cpuset_for_core(topology: &Topology, idx: usize) -> CpuSet {
     let cores = (*topology).objects_with_type(&ObjectType::Core).unwrap();
-    let numa_nodes = (*topology)
-        .objects_with_type(&ObjectType::NUMANode)
-        .unwrap_or(Vec::new());
     match cores.get(idx) {
         Some(val) => val.cpuset().unwrap(),
         None => panic!(
@@ -65,7 +62,7 @@ impl BindableThreadPool {
                 .start_handler(move |thread_id| {
                     bind_numa(thread_id, &topo);
                 }).build(),
-            _ => self
+            POLICY::ROUND_ROBIN_CORE => self
                 .builder
                 .start_handler(move |thread_id| {
                     binder(thread_id, &topo);
@@ -84,7 +81,7 @@ impl BindableThreadPool {
                     let topo = Mutex::new(Topology::new());
                     bind_numa(thread_id, &topo);
                 }).build_global(),
-            _ => self
+            POLICY::ROUND_ROBIN_CORE => self
                 .builder
                 .start_handler(move |thread_id| {
                     binder(thread_id, &topo);
@@ -93,19 +90,19 @@ impl BindableThreadPool {
     }
 }
 
-fn bind_main_thread(topo: &Mutex<Topology>) {
-    let pthread_id = get_thread_id();
-    let mut locked_topo = topo.lock().unwrap();
-    let mut bind_to = cpuset_for_core(&locked_topo, 0);
-    bind_to.singlify();
-    println!("binding {} to {}", pthread_id, bind_to);
-    locked_topo
-        .set_cpubind_for_thread(pthread_id, bind_to, CPUBIND_THREAD)
-        .unwrap();
-    println!("binding done");
-    let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-    println!("Thread {}, bind to {:?}", 0, after);
-}
+//fn bind_main_thread(topo: &Mutex<Topology>) {
+//    let pthread_id = get_thread_id();
+//    let mut locked_topo = topo.lock().unwrap();
+//    let mut bind_to = cpuset_for_core(&locked_topo, 0);
+//    bind_to.singlify();
+//    println!("binding {} to {}", pthread_id, bind_to);
+//    locked_topo
+//        .set_cpubind_for_thread(pthread_id, bind_to, CPUBIND_THREAD)
+//        .unwrap();
+//    println!("binding done");
+//    let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
+//    println!("Thread {}, bind to {:?}", 0, after);
+//}
 
 fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
     let pthread_id = get_thread_id();
@@ -128,23 +125,23 @@ fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
             .unwrap()
     };
     //println!("want to bind to {:?}", my_core);
-    my_core.singlify(); //This would give you "some" cpu node but you don't know which one.
+    my_core.singlify(); //This would give you one SMT core.
     locked_topo
         .set_cpubind_for_thread(pthread_id, my_core, CPUBIND_THREAD)
         .unwrap();
-    let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-    println!("Thread {}, bind to {:?}", thread_id, after);
+    //let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
+    //println!("Thread {}, bind to {:?}", thread_id, after);
 }
 fn binder(thread_id: usize, topo: &Mutex<Topology>) {
     let pthread_id = get_thread_id();
     let mut locked_topo = topo.lock().unwrap();
     let mut bind_to = cpuset_for_core(&locked_topo, thread_id);
     bind_to.singlify();
-    println!("binding {} to {}", pthread_id, bind_to);
+    //println!("binding {} to {}", pthread_id, bind_to);
     locked_topo
         .set_cpubind_for_thread(pthread_id, bind_to, CPUBIND_THREAD)
         .unwrap();
-    println!("binding done");
-    let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-    println!("Thread {}, bind to {:?}", thread_id, after);
+    //println!("binding done");
+    //let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
+    //println!("Thread {}, bind to {:?}", thread_id, after);
 }

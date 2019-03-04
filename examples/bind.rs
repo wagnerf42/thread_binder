@@ -1,5 +1,7 @@
+extern crate rayon;
+extern crate thread_binder;
 use rayon::prelude::*;
-use thread_binder::{Policy, ThreadPoolBuilder};
+use thread_binder::ThreadPoolBuilder;
 
 // let's have a slow computation so you can take time checking
 // the binding with htop
@@ -11,7 +13,7 @@ pub fn fibonacci_recursive(n: u64) -> u64 {
 }
 
 fn main() {
-    ThreadPoolBuilder::new(Policy::RoundRobinNuma)
+    ThreadPoolBuilder::new()
         .num_threads(4)
         .build_global()
         .expect("Thread pool build failed");

@@ -11,6 +11,15 @@ pub struct ThreadPoolBuilder {
     bind_policy: Policy,
 }
 
+impl Default for ThreadPoolBuilder {
+    fn default() -> Self {
+        ThreadPoolBuilder {
+            builder: Default::default(),
+            bind_policy: Policy::RoundRobinNuma,
+        }
+    }
+}
+
 /// This enum specifies how to dispatch threads on the machine.
 pub enum Policy {
     /// Binds all threads in one numa node (1 thread per core until we run out of them).
@@ -29,19 +38,23 @@ impl ThreadPoolBuilder {
     }
 
     /// Set binding policy.
-    pub fn bind(self, bind_policy: Policy) -> Self {
-        ThreadPoolBuilder {
-            builder: self.builder,
-            bind_policy,
-        }
+    pub fn bind(mut self, bind_policy: Policy) -> Self {
+        self.bind_policy = bind_policy;
+        self
+    }
+
+    pub fn start_handler<H>(mut self, start_handler: H) -> Self
+    where
+        H: Fn(usize) + Send + Sync + 'static,
+    {
+        self.builder = self.builder.start_handler(start_handler);
+        self
     }
 
     /// Set number of threads wanted.
-    pub fn num_threads(self, num_threads: usize) -> Self {
-        ThreadPoolBuilder {
-            builder: self.builder.num_threads(num_threads),
-            bind_policy: self.bind_policy,
-        }
+    pub fn num_threads(mut self, num_threads: usize) -> Self {
+        self.builder = self.builder.num_threads(num_threads);
+        self
     }
 
     /// Build the `ThreadPool`.

@@ -1,5 +1,3 @@
-extern crate rayon;
-extern crate thread_binder;
 use rayon::prelude::*;
 use thread_binder::ThreadPoolBuilder;
 
@@ -18,7 +16,7 @@ fn main() {
         .build_global()
         .expect("Thread pool build failed");
 
-    let fibo: Vec<_> = (0..20u64)
+    let fibo: Vec<_> = (0..46u64)
         .into_par_iter()
         .map(|i| fibonacci_recursive(i))
         .collect();

@@ -5,5 +5,5 @@ authors = ["Saurabh Raje <saurabh.mraje@gmail.com>"]
 
 [dependencies]
 rayon = "*"
-hwloc = "*"
+hwloc = "0.5.0"
 libc = "*"

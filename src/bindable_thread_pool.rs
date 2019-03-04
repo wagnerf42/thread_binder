@@ -1,147 +1,115 @@
 extern crate hwloc;
 extern crate libc;
 extern crate rayon;
-use self::hwloc::{CpuSet, ObjectType, Topology, CPUBIND_THREAD};
-use self::rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
+use self::hwloc::{ObjectType, Topology, TopologyObject, CPUBIND_THREAD};
+use std::sync::Arc;
 use std::sync::Mutex;
 
-pub struct BindableThreadPool {
-    builder: ThreadPoolBuilder,
-    bind_policy: POLICY,
-}
-/// This enum specifies whether you want to pack the threads on one NUMA node or assign them on
-/// multiple NUMA nodes in a round robin fashion.
-pub enum POLICY {
-    /// Threads get assigned to the first available CPU in a NUMA node in a round robin fashion.
-    ROUND_ROBIN_NUMA,
-    /// Threads get assigned to the first available PU in a CPU in a round robin fashion.
-    ROUND_ROBIN_CORE,
-    // Threads get assigned to the first available PU. This will be added later if required.
-    //ROUND_ROBIN_PU,
+/// Same as rayon's ThreadPoolBuilder expect you get an extra `bind` method.
+pub struct ThreadPoolBuilder {
+    builder: rayon::ThreadPoolBuilder,
+    bind_policy: Policy,
 }
 
-fn cpuset_for_core(topology: &Topology, idx: usize) -> CpuSet {
-    let cores = (*topology).objects_with_type(&ObjectType::Core).unwrap();
-    match cores.get(idx) {
-        Some(val) => val.cpuset().unwrap(),
-        None => panic!(
-            "I won't allow you to have {} more threads than logical cores!",
-            idx - cores.len() + 1
-        ),
+/// This enum specifies how to dispatch threads on the machine.
+pub enum Policy {
+    /// Binds all threads in one numa node (1 thread per core until we run out of them).
+    RoundRobinNuma,
+    /// Do not bind.
+    NoBinding,
+}
+
+impl ThreadPoolBuilder {
+    /// Creates a new ThreadPoolBuilder. We bind to numa by default.
+    pub fn new() -> Self {
+        ThreadPoolBuilder {
+            builder: rayon::ThreadPoolBuilder::new(),
+            bind_policy: Policy::RoundRobinNuma,
+        }
     }
-}
 
-fn get_thread_id() -> libc::pthread_t {
-    unsafe { libc::pthread_self() }
-}
-
-impl BindableThreadPool {
-    /// Creates a new LoggedPoolBuilder.
-    pub fn new(bind_policy: POLICY) -> Self {
-        BindableThreadPool {
-            builder: ThreadPoolBuilder::new(),
+    /// Set binding policy.
+    pub fn bind(self, bind_policy: Policy) -> Self {
+        ThreadPoolBuilder {
+            builder: self.builder,
             bind_policy,
         }
     }
 
     /// Set number of threads wanted.
     pub fn num_threads(self, num_threads: usize) -> Self {
-        BindableThreadPool {
+        ThreadPoolBuilder {
             builder: self.builder.num_threads(num_threads),
             bind_policy: self.bind_policy,
         }
     }
 
     /// Build the `ThreadPool`.
-    pub fn build(self) -> Result<ThreadPool, ThreadPoolBuildError> {
-        let topo = Mutex::new(Topology::new());
-        //bind_main_thread(&topo);
+    pub fn build(self) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError> {
+        let topo = Arc::new(Mutex::new(Topology::new()));
+
         let pool = match self.bind_policy {
-            POLICY::ROUND_ROBIN_NUMA => self
+            Policy::RoundRobinNuma => self
                 .builder
                 .start_handler(move |thread_id| {
                     bind_numa(thread_id, &topo);
-                }).build(),
-            POLICY::ROUND_ROBIN_CORE => self
-                .builder
-                .start_handler(move |thread_id| {
-                    binder(thread_id, &topo);
-                }).build(),
+                })
+                .build(),
+            Policy::NoBinding => self.builder.build(),
         };
         pool
     }
 
-    pub fn build_global(self) -> Result<(), ThreadPoolBuildError> {
-        let topo = Mutex::new(Topology::new());
-        //bind_main_thread(&topo);
+    /// Build the global `ThreadPool`.
+    pub fn build_global(self) -> Result<(), rayon::ThreadPoolBuildError> {
+        let topo = Arc::new(Mutex::new(Topology::new()));
+
         match self.bind_policy {
-            POLICY::ROUND_ROBIN_NUMA => self
+            Policy::RoundRobinNuma => self
                 .builder
                 .start_handler(move |thread_id| {
-                    let topo = Mutex::new(Topology::new());
                     bind_numa(thread_id, &topo);
-                }).build_global(),
-            POLICY::ROUND_ROBIN_CORE => self
-                .builder
-                .start_handler(move |thread_id| {
-                    binder(thread_id, &topo);
-                }).build_global(),
+                })
+                .build_global(),
+            Policy::NoBinding => self.builder.build_global(),
         }
     }
 }
 
-//fn bind_main_thread(topo: &Mutex<Topology>) {
-//    let pthread_id = get_thread_id();
-//    let mut locked_topo = topo.lock().unwrap();
-//    let mut bind_to = cpuset_for_core(&locked_topo, 0);
-//    bind_to.singlify();
-//    println!("binding {} to {}", pthread_id, bind_to);
-//    locked_topo
-//        .set_cpubind_for_thread(pthread_id, bind_to, CPUBIND_THREAD)
-//        .unwrap();
-//    println!("binding done");
-//    let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-//    println!("Thread {}, bind to {:?}", 0, after);
-//}
-
-fn bind_numa(thread_id: usize, topo: &Mutex<Topology>) {
-    let pthread_id = get_thread_id();
-    let mut locked_topo = topo.lock().unwrap();
-    let num_numa_nodes = (locked_topo)
-        .objects_with_type(&ObjectType::NUMANode)
-        .unwrap_or(Vec::new())
-        .len();
-    let my_numa_node_index = thread_id % num_numa_nodes;
-    let my_core_index = thread_id / num_numa_nodes;
-    let mut my_core = {
-        let cpu_list = locked_topo.objects_with_type(&ObjectType::Core).unwrap();
-        let num_cores_per_numa = cpu_list.len() / num_numa_nodes;
-        let cpu_depth = cpu_list[0].depth();
-        let cpu_list = locked_topo.objects_at_depth(cpu_depth);
-        cpu_list
-            .get(my_numa_node_index * num_cores_per_numa + my_core_index)
-            .unwrap()
-            .cpuset()
-            .unwrap()
-    };
-    //println!("want to bind to {:?}", my_core);
-    my_core.singlify(); //This would give you one SMT core.
-    locked_topo
-        .set_cpubind_for_thread(pthread_id, my_core, CPUBIND_THREAD)
-        .unwrap();
-    //let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-    //println!("Thread {}, bind to {:?}", thread_id, after);
+/// return if given ancestor is one of object's
+fn has_ancestor(object: &TopologyObject, ancestor: &TopologyObject) -> bool {
+    let father = object.parent();
+    father
+        .map(|f| {
+            (f.object_type() == ancestor.object_type()
+                && f.logical_index() == ancestor.logical_index())
+                || has_ancestor(f, ancestor)
+        })
+        .unwrap_or(false)
 }
-fn binder(thread_id: usize, topo: &Mutex<Topology>) {
-    let pthread_id = get_thread_id();
+
+fn bind_numa(thread_id: usize, topo: &Arc<Mutex<Topology>>) {
+    let pthread_id = unsafe { libc::pthread_self() };
     let mut locked_topo = topo.lock().unwrap();
-    let mut bind_to = cpuset_for_core(&locked_topo, thread_id);
-    bind_to.singlify();
-    //println!("binding {} to {}", pthread_id, bind_to);
+    let cpu_set = {
+        // let's select one numa node (or above if none)
+        let ancestor_level = locked_topo
+            .depth_or_above_for_type(&ObjectType::NUMANode)
+            .unwrap();
+        let targets = locked_topo.objects_at_depth(ancestor_level);
+        let ancestor = targets.first().expect("no common ancestor");
+        // ok now look at all its processing units and take the one matching our thread_id
+        let processing_units = locked_topo.objects_with_type(&ObjectType::PU).unwrap();
+        let unit = processing_units
+            .iter()
+            .filter(|pu| has_ancestor(pu, ancestor))
+            .cycle()
+            .nth(thread_id)
+            .expect("no cores below given ancestor");
+        unit.cpuset().unwrap()
+    };
+
     locked_topo
-        .set_cpubind_for_thread(pthread_id, bind_to, CPUBIND_THREAD)
+        .set_cpubind_for_thread(pthread_id, cpu_set, CPUBIND_THREAD)
         .unwrap();
-    //println!("binding done");
-    //let after = locked_topo.get_cpubind_for_thread(pthread_id, CPUBIND_THREAD);
-    //println!("Thread {}, bind to {:?}", thread_id, after);
 }

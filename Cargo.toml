@@ -11,6 +11,6 @@ description = "Bind rayon pools to limit numa effects"
 exclude = ["*.nix"]
 
 [dependencies]
-rayon = "*"
+rayon = "^1"
 hwloc = "0.5.0"
-libc = "*"
+libc = "^0.2"

@@ -31,8 +31,11 @@ pub enum Policy {
 impl ThreadPoolBuilder {
     /// Creates a new ThreadPoolBuilder. We bind to numa by default.
     pub fn new() -> Self {
+        let topo = Arc::new(Mutex::new(Topology::new()));
         ThreadPoolBuilder {
-            builder: rayon::ThreadPoolBuilder::new(),
+            builder: rayon::ThreadPoolBuilder::new().start_handler(move |thread_id| {
+                bind_numa(thread_id, &topo);
+            }),
             bind_policy: Policy::RoundRobinNuma,
         }
     }
@@ -47,7 +50,11 @@ impl ThreadPoolBuilder {
     where
         H: Fn(usize) + Send + Sync + 'static,
     {
-        self.builder = self.builder.start_handler(start_handler);
+        let topo = Arc::new(Mutex::new(Topology::new()));
+        self.builder = self.builder.start_handler(move |thread_id| {
+            bind_numa(thread_id, &topo);
+            start_handler(thread_id);
+        });
         self
     }
 
@@ -59,15 +66,8 @@ impl ThreadPoolBuilder {
 
     /// Build the `ThreadPool`.
     pub fn build(self) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError> {
-        let topo = Arc::new(Mutex::new(Topology::new()));
-
         let pool = match self.bind_policy {
-            Policy::RoundRobinNuma => self
-                .builder
-                .start_handler(move |thread_id| {
-                    bind_numa(thread_id, &topo);
-                })
-                .build(),
+            Policy::RoundRobinNuma => self.builder.build(),
             Policy::NoBinding => self.builder.build(),
         };
         pool
